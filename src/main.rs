@@ -1,8 +1,7 @@
 use std::ffi::{CString};
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char};
 use std::slice;
 use serde::Serialize;
-use std::env;
 
 unsafe extern "C" {
     fn Prove(input: *const c_char) -> *mut u8;
@@ -35,7 +34,7 @@ fn generate_proof(input: &ProofInput) -> Result<Vec<u8>, String> {
             return Err("Proof generation failed".to_string());
         }
 
-        let proof = slice::from_raw_parts(ptr, 0).to_vec();
+        let proof = slice::from_raw_parts(ptr, 736).to_vec(); 
 
         FreeProof(ptr);
         
