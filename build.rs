@@ -194,19 +194,28 @@ fn build_go_library(go_src: &Path, out_dir: &Path) {
 
     eprintln!("Building Go library at {}...", lib_path.display());
 
-    let status = Command::new("go")
-        .args([
+    let mut cmd = Command::new("go");
+    cmd.args([
             "build",
             "-buildmode=c-archive",
             "-ldflags", "-w -s",
             "-o",
             lib_path.to_str().unwrap(),
         ])
-        .env("CGO_CFLAGS", "-mmacosx-version-min=11.0")
-        .env("CGO_LDFLAGS", "-mmacosx-version-min=11.0")
-        .current_dir(go_src)
-        .status()
-        .expect("Failed to execute go build");
+        .current_dir(go_src);
+
+    #[cfg(target_os = "macos")]
+    {
+        cmd.env("CGO_CFLAGS", "-mmacosx-version-min=11.0")
+           .env("CGO_LDFLAGS", "-mmacosx-version-min=11.0");
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        cmd.env("CGO_ENABLED", "1");
+    }
+
+    let status = cmd.status().expect("Failed to execute go build");
 
     if !status.success() {
         panic!("Go build failed. Check the error messages above.");
