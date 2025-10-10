@@ -19,7 +19,8 @@ fn main() {
         .expect("Could not find main.go in repository");
 
     download_go_dependencies(&go_pkg_path);
-    build_go_library(&go_pkg_path, &out_dir);
+    let lib_path = build_go_library(&go_pkg_path, &out_dir);
+    copy_to_output_dir(&lib_path);
     setup_linking(&out_dir);
 
     println!("cargo:rerun-if-changed={}", go_pkg_path.join("main.go").display());
@@ -79,7 +80,7 @@ fn clone_repository(repo_path: &Path) {
                 panic!("Git clone failed with both SSH and HTTPS");
             }
         } else {
-            panic!("Git clone failed. Please check your network connection and try again.");
+            panic!("Git clone failed");
         }
     }
 }
@@ -152,7 +153,7 @@ fn download_go_dependencies(go_src: &Path) {
         go_src
     };
 
-    eprintln!("Downloading Go dependencies from {}...", go_mod_dir.display());
+    eprintln!("Downloading Go dependencies...");
     
     let mut cmd = Command::new("go");
     cmd.args(["mod", "download"])
@@ -173,7 +174,6 @@ fn download_go_dependencies(go_src: &Path) {
         panic!("go mod download failed");
     }
 
-    eprintln!("Running go mod tidy...");
     let mut tidy_cmd = Command::new("go");
     tidy_cmd.args(["mod", "tidy"])
         .current_dir(go_mod_dir);
@@ -183,13 +183,12 @@ fn download_go_dependencies(go_src: &Path) {
     }
 
     let status = tidy_cmd.status().expect("Failed to execute go mod tidy");
-
     if !status.success() {
         panic!("go mod tidy failed");
     }
 }
 
-fn build_go_library(go_src: &Path, out_dir: &Path) {
+fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
     #[cfg(target_os = "linux")]
     let lib_name = "libproof.so";
     
@@ -201,7 +200,7 @@ fn build_go_library(go_src: &Path, out_dir: &Path) {
 
     let lib_path = out_dir.join(lib_name);
 
-    eprintln!("Building Go shared library at {}...", lib_path.display());
+    eprintln!("Building Go shared library...");
 
     let mut cmd = Command::new("go");
     cmd.args([
@@ -225,12 +224,35 @@ fn build_go_library(go_src: &Path, out_dir: &Path) {
     }
 
     let status = cmd.status().expect("Failed to execute go build");
-
     if !status.success() {
-        panic!("Go build failed. Check the error messages above.");
+        panic!("Go build failed");
     }
 
-    eprintln!("Go library built successfully at {}", lib_path.display());
+    eprintln!("Go library built at {}", lib_path.display());
+    lib_path
+}
+
+fn copy_to_output_dir(lib_path: &Path) {
+    let profile = var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let manifest_dir = var("CARGO_MANIFEST_DIR").unwrap();
+    
+    let target_dir = PathBuf::from(&manifest_dir)
+        .join("target")
+        .join(&profile);
+    
+    if let Some(lib_name) = lib_path.file_name() {
+        let dest = target_dir.join(lib_name);
+        
+        if let Ok(_) = fs::create_dir_all(&target_dir) {
+            match fs::copy(lib_path, &dest) {
+                Ok(_) => eprintln!("Copied library to {}", dest.display()),
+                Err(e) => eprintln!("Warning: failed to copy library: {}", e),
+            }
+        }
+    }
+
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", target_dir.display());
 }
 
 fn setup_linking(out_dir: &Path) {
