@@ -190,14 +190,23 @@ fn download_go_dependencies(go_src: &Path) {
 }
 
 fn build_go_library(go_src: &Path, out_dir: &Path) {
-    let lib_path = out_dir.join("libproof.a");
+    #[cfg(target_os = "linux")]
+    let lib_name = "libproof.so";
+    
+    #[cfg(target_os = "macos")]
+    let lib_name = "libproof.dylib";
+    
+    #[cfg(target_os = "windows")]
+    let lib_name = "libproof.dll";
 
-    eprintln!("Building Go library at {}...", lib_path.display());
+    let lib_path = out_dir.join(lib_name);
+
+    eprintln!("Building Go shared library at {}...", lib_path.display());
 
     let mut cmd = Command::new("go");
     cmd.args([
             "build",
-            "-buildmode=c-archive",
+            "-buildmode=c-shared",
             "-ldflags", "-w -s",
             "-o",
             lib_path.to_str().unwrap(),
@@ -226,7 +235,7 @@ fn build_go_library(go_src: &Path, out_dir: &Path) {
 
 fn setup_linking(out_dir: &Path) {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=proof");
+    println!("cargo:rustc-link-lib=dylib=proof");
 
     #[cfg(target_os = "macos")]
     {
