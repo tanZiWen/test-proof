@@ -189,7 +189,6 @@ fn download_go_dependencies(go_src: &Path) {
 }
 
 fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
-    // 静态库文件名
     let lib_name = "libproof.a";
     let header_name = "libproof.h";
     
@@ -201,8 +200,8 @@ fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
     let mut cmd = Command::new("go");
     cmd.args([
             "build",
-            "-buildmode=c-archive",  // 构建静态库
-            "-ldflags", "-w -s -extldflags=-static",  // 静态链接标志
+            "-buildmode=c-archive", 
+            "-ldflags", "-w -s -extldflags=-static",
             "-o",
             lib_path.to_str().unwrap(),
         ])
@@ -235,7 +234,6 @@ fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
 
     eprintln!("Go static library built at {}", lib_path.display());
     
-    // 检查头文件是否生成
     if header_path.exists() {
         eprintln!("Header file generated at {}", header_path.display());
     }
@@ -274,17 +272,14 @@ fn copy_to_output_dir(lib_path: &Path) {
         }
     }
 
-    // 静态链接不需要rpath设置
     eprintln!("Static linking configured - no runtime dependencies required");
 }
 
 fn setup_linking(out_dir: &Path) {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     
-    // 静态链接配置
     println!("cargo:rustc-link-lib=static=proof");
 
-    // 平台特定的系统库（静态链接时可能需要）
     #[cfg(target_os = "macos")]
     {
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
@@ -298,7 +293,6 @@ fn setup_linking(out_dir: &Path) {
         println!("cargo:rustc-link-lib=dylib=m");
         println!("cargo:rustc-link-lib=dylib=resolv");
         println!("cargo:rustc-link-lib=dylib=c");
-        // 对于完全静态链接，可以尝试：
         // println!("cargo:rustc-link-lib=static=c");
     }
 
@@ -312,7 +306,6 @@ fn setup_linking(out_dir: &Path) {
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=dl");
 
-    // 静态链接时的额外链接器标志
     #[cfg(target_os = "linux")]
     {
         println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
