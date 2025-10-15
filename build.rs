@@ -207,7 +207,6 @@ fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
         ])
         .current_dir(go_src);
 
-    // 启用CGO并设置静态链接
     cmd.env("CGO_ENABLED", "1");
     
     #[cfg(target_os = "linux")]
@@ -260,7 +259,6 @@ fn copy_to_output_dir(lib_path: &Path) {
         }
     }
 
-    // 同时复制头文件
     let header_path = lib_path.with_extension("h");
     if header_path.exists() {
         if let Some(header_name) = header_path.file_name() {
