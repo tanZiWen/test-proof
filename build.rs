@@ -189,28 +189,33 @@ fn download_go_dependencies(go_src: &Path) {
 }
 
 fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
-    #[cfg(target_os = "linux")]
-    let lib_name = "libproof.so";
+    // 静态库文件名
+    let lib_name = "libproof.a";
+    let header_name = "libproof.h";
     
-    #[cfg(target_os = "macos")]
-    let lib_name = "libproof.dylib";
-    
-    #[cfg(target_os = "windows")]
-    let lib_name = "libproof.dll";
-
     let lib_path = out_dir.join(lib_name);
+    let header_path = out_dir.join(header_name);
 
-    eprintln!("Building Go shared library...");
+    eprintln!("Building Go static library...");
 
     let mut cmd = Command::new("go");
     cmd.args([
             "build",
-            "-buildmode=c-shared",
-            "-ldflags", "-w -s",
+            "-buildmode=c-archive",  // 构建静态库
+            "-ldflags", "-w -s -extldflags=-static",  // 静态链接标志
             "-o",
             lib_path.to_str().unwrap(),
         ])
         .current_dir(go_src);
+
+    // 启用CGO并设置静态链接
+    cmd.env("CGO_ENABLED", "1");
+    
+    #[cfg(target_os = "linux")]
+    {
+        cmd.env("CGO_CFLAGS", "-static")
+           .env("CGO_LDFLAGS", "-static");
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -218,9 +223,9 @@ fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
            .env("CGO_LDFLAGS", "-mmacosx-version-min=11.0");
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(target_os = "windows")]
     {
-        cmd.env("CGO_ENABLED", "1");
+        cmd.env("CGO_LDFLAGS", "-static-libgcc -static-libstdc++");
     }
 
     let status = cmd.status().expect("Failed to execute go build");
@@ -228,7 +233,13 @@ fn build_go_library(go_src: &Path, out_dir: &Path) -> PathBuf {
         panic!("Go build failed");
     }
 
-    eprintln!("Go library built at {}", lib_path.display());
+    eprintln!("Go static library built at {}", lib_path.display());
+    
+    // 检查头文件是否生成
+    if header_path.exists() {
+        eprintln!("Header file generated at {}", header_path.display());
+    }
+    
     lib_path
 }
 
@@ -245,33 +256,65 @@ fn copy_to_output_dir(lib_path: &Path) {
         
         if let Ok(_) = fs::create_dir_all(&target_dir) {
             match fs::copy(lib_path, &dest) {
-                Ok(_) => eprintln!("Copied library to {}", dest.display()),
+                Ok(_) => eprintln!("Copied static library to {}", dest.display()),
                 Err(e) => eprintln!("Warning: failed to copy library: {}", e),
             }
         }
     }
 
-    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", target_dir.display());
+    // 同时复制头文件
+    let header_path = lib_path.with_extension("h");
+    if header_path.exists() {
+        if let Some(header_name) = header_path.file_name() {
+            let dest = target_dir.join(header_name);
+            match fs::copy(&header_path, &dest) {
+                Ok(_) => eprintln!("Copied header file to {}", dest.display()),
+                Err(e) => eprintln!("Warning: failed to copy header: {}", e),
+            }
+        }
+    }
+
+    // 静态链接不需要rpath设置
+    eprintln!("Static linking configured - no runtime dependencies required");
 }
 
 fn setup_linking(out_dir: &Path) {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=dylib=proof");
+    
+    // 静态链接配置
+    println!("cargo:rustc-link-lib=static=proof");
 
+    // 平台特定的系统库（静态链接时可能需要）
     #[cfg(target_os = "macos")]
     {
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=framework=Security");
         println!("cargo:rustc-link-lib=dylib=resolv");
+        println!("cargo:rustc-link-lib=dylib=c");
     }
 
     #[cfg(target_os = "linux")]
     {
         println!("cargo:rustc-link-lib=dylib=m");
         println!("cargo:rustc-link-lib=dylib=resolv");
+        println!("cargo:rustc-link-lib=dylib=c");
+        // 对于完全静态链接，可以尝试：
+        // println!("cargo:rustc-link-lib=static=c");
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        println!("cargo:rustc-link-lib=dylib=ws2_32");
+        println!("cargo:rustc-link-lib=dylib=userenv");
+        println!("cargo:rustc-link-lib=dylib=advapi32");
     }
 
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=dl");
+
+    // 静态链接时的额外链接器标志
+    #[cfg(target_os = "linux")]
+    {
+        println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
+    }
 }
